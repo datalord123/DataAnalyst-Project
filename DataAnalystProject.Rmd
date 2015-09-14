@@ -1,0 +1,578 @@
+
+Analysis of 2016 NC Presidential Campaign Contributions by Matthew Bellissimo
+---
+output: html_document
+---
+
+```{r echo=FALSE, message=FALSE, warning=FALSE, packages}
+library(ggplot2)
+library(gridExtra)
+library(dplyr)
+library(tidyr)
+theme_set(theme_minimal(20))
+```
+
+I wanted to Analyze the 2016 NC Presidential Campaign Contributions
+```{r echo=FALSE, Load_the_Data}
+Contributions<-read.csv('NC-Contributions.csv',header=TRUE)
+```
+
+
+# Univariate Plots Section
+```{r echo=FALSE, Univariate_Plots}
+# Summarize the data set
+names(Contributions)
+str(Contributions)
+```
+Candidate Names
+```{r echo=FALSE}
+levels(Contributions$cand_nm)
+```
+Count of Unique Contributors 
+```{r echo=FALSE}
+length(levels(Contributions$contbr_nm))
+```
+
+Count of Unique Occupations
+```{r echo=FALSE}
+length(levels(Contributions$contbr_occupation))
+```
+Top 10, Cities and Contributor Occupations
+```{r echo=FALSE}
+head(summary(Contributions$contbr_city),10)
+head(summary(Contributions$contbr_occupation),10)
+```
+Summary of Receipt Amount
+```{r echo=FALSE}
+summary(Contributions$contb_receipt_amt)
+```
+Rceipt Desciptions
+```{r echo=FALSE}
+levels(Contributions$receipt_desc)
+```
+I noticed was that Ted Cruz was being counted twice.
+I used tidyr to fix this.
+```{r echo=FALSE}
+SpContributions<-spread(Contributions,cand_nm,contb_receipt_amt)
+SpContributions$"Cruz, Rafael Edward 'Ted'"[is.na(SpContributions$"Cruz, Rafael Edward 'Ted'")]<-0
+SpContributions$"CRUZ, RAFAEL EDWARD TED"[is.na(SpContributions$"CRUZ, RAFAEL EDWARD TED")]<-0
+SpContributions$"Cruz, Rafael Edward 'Ted'"<-SpContributions$"Cruz, Rafael Edward 'Ted'"+ SpContributions$"CRUZ, RAFAEL EDWARD TED"
+SpContributions$"CRUZ, RAFAEL EDWARD TED"<-NULL
+GathContributions<-gather(SpContributions,'cand_nm','contb_receipt_amt',17:30)
+Contributions<-subset(GathContributions,!is.na(contb_receipt_amt)&contb_receipt_amt !=0)
+```
+I also created an entirely new I also added another column called 'Day' with the date represented as numeric value.
+```{r echo=FALSE}
+Contributions$Days<-as.numeric(as.Date(strptime(Contributions$contb_receipt_dt,'%d-%b-%y'))-min(as.Date(strptime(Contributions$contb_receipt_dt,'%d-%b-%y'))))
+str(Contributions)
+```
+
+When I looked at a summary of Contribution amounts, i noticed that a number of values were negative. Looking at the reciept desciptions showed that these values actually represented refunds. 
+
+```{r echo=FALSE}
+ContributionsNR<-subset(Contributions,contb_receipt_amt>0)
+summary(ContributionsNR$contb_receipt_amt)
+```
+
+Excluding refunds from the dataset didn't show a significant change in the summary values, so i left them in.
+
+I decided to make two summary tables so that i could go over the data at a higher level. One was for candidate information, the other for donor information.
+```{r echo=FALSE}
+#Summary Tables
+Contributions.Summary.Can<-Contributions %>% group_by(cand_nm) %>%
+  summarise(FreqOfContributions = n(),
+            BiggestRefund = min(contb_receipt_amt),
+            MeanContributions=mean(contb_receipt_amt),
+            MedianContributions=median(contb_receipt_amt),
+            MaxContributions=max(contb_receipt_amt),
+            TotalContributions=sum(contb_receipt_amt))%>%
+  arrange(-FreqOfContributions)
+
+Contributions.Summary.Con<-Contributions %>% group_by(contbr_nm) %>%
+  summarise(TotalContributions=sum(contb_receipt_amt),
+            FreqOfContributions = n(),
+            MeanContributions=mean(contb_receipt_amt),
+            MedianContributions=median(contb_receipt_amt),
+            MaxContributions=max(contb_receipt_amt))%>%
+  arrange(-TotalContributions)
+
+dim(subset(Contributions.Summary.Con,FreqOfContributions==1))
+dim(subset(Contributions.Summary.Con,FreqOfContributions>1))
+```
+
+There are 14 Candidates and 1036 Unique Contributors
+436 contributors contributed more than once.
+The maximum contribution was $10800. 
+The largest refund was $-5400.
+The smallest contribution was $2
+The interquartile range of Contributions was between $40 and $250
+The median contribution was 100
+The mean contribution was 375.9. 
+Contributor occupation varied widely,though the largest group was composed of Retirees. 
+
+The largest number of contributions went to Ben Carson(594) on the Republican side, followed by Ted Cruz(425), and then Democratic Candidate Hillary Clinton(414). 
+Rick Perry came in last with only one contribution. 
+The largest contribution (10800) went to Ben Carson.
+Jeb Bush had the highest Mean and Median contribution, 2034 and 2700 respectively.
+
+To begin, i plotted a basic histogram 
+```{r echo=FALSE}
+ggplot(aes(x=contb_receipt_amt), data = Contributions)+
+  geom_histogram()+
+  xlab('Contribution Amount')+
+  ylab('Frequency')+
+  ggtitle('Campaign Contribution Histogram')
+```
+
+I could see that most contributions were clustered slightly above 0, and included small numbers of larger positive and negative contributions. Unfortunately, it was difficult to infer any more information beyond this, so I decided to play around with the binwidth, and add some more detail to x axis.
+
+```{r echo=FALSE}
+ggplot(aes(x=contb_receipt_amt), data = Contributions)+
+  geom_histogram(binwidth=10)+
+  scale_x_continuous(breaks=seq(-6000,11000,1000))+
+  xlab('Contribution Amount')+
+  ylab('Frequency')+
+  ggtitle('Campaign Contribution Histogram')+
+  theme(axis.text.x=element_text(angle=20,size=8,vjust=0.9,hjust=.9),title=element_text(size=15))
+
+```
+The new plot showed that most contributions were clustered between 0 and 1000, with a spike of contributions occuring right below 3000, and a small number of much larger contributions above that. It also appeared that most refunds occured around this 3000 dollar level. Still, it was difficult to see the outliers, as there were very few of them. I didn't want to ignore these values,however, because despite there not being a lot of them, i knew that large contributions are very important in political elections. To remedy this situation, I decided to perform a log10 transformatino on the x axis. 
+
+```{r echo=FALSE}
+ggplot(aes(x=contb_receipt_amt), data = Contributions)+
+  geom_histogram(binwidth=.01)+
+  scale_x_log10(breaks=c(2,5,10,25,50,100,250,500,1000,2750,5500,10000))+
+  xlab('Contribution Amount')+
+  ylab('Frequency')+
+  ggtitle('Log10 Transformed Campaign Contribution Histogram')+
+  theme(axis.text.x=element_text(angle=20,size=8,vjust=0.9,hjust=.9),title=element_text(size=15))
+```
+This showed the clearest picture yet for how contributions occured. In addition to being
+normally distributed, i could now see, in a much higher level of detail, the scale and frequency of different contributions. The only downside here was that the log transformation turned all of the negative data values,0, which meant that i lost all of the information on refunds.
+
+I also noticed that there were major gaps in between the contribution values I thought this was a really interesting trend. Contribution values mostly seemed to be in whole, even, values, and were almost all a factor 25.I believe this is an example of the psychological trend of mental anchoring, as contributors are tending to contribute in familiar numbers(ex: 1000 is a more common contribution than 980).In any case, the result was that contributions looked like they mostly occured in discrete increments. 
+
+Because of phenomenom, and the because i really did want to include refunds in my plot, I decided it would probably make sense to use R's cut function.
+
+```{r echo=FALSE}
+Contributions$contb_receipt_amt.Bucket<-cut(Contributions$contb_receipt_amt,c(-6000,-3000,0,5,10,25,50,100,250,500,1000,2750,5500,11000),dig.lab=10)
+
+summary(Contributions$contb_receipt_amt.Bucket)
+
+ggplot(aes(x=contb_receipt_amt.Bucket),data=Contributions)+
+  geom_histogram()+
+  xlab('Contributions')+
+  ylab('Frequency')+
+  ggtitle('Campaign Donation Histogram')+
+  theme(axis.text.x=element_text(angle=20,size=8,vjust=0.9,hjust=.9),title=element_text(size=15))
+```
+I figured it would also make sense to create a plot to show how the Candidates ranked in terms of number of donations recieved.
+```{r echo=FALSE}
+  ggplot(aes(x=reorder(cand_nm,-FreqOfContributions),y=FreqOfContributions),data=Contributions.Summary.Can)+
+  geom_bar(stat='identity')+
+  xlab('Candidates')+
+  ylab('Frequency')+
+  ggtitle('Contribution Frequency Histogram')+
+  theme(axis.text.x=element_text(angle=20,size=8,vjust=0.9,hjust=.9),title=element_text(size=15))
+```
+We can see that only 3 of the 14 candidates(Ben Carson,Ted Cruz, and Hillary Clinton) broke 400 contributions since the start of their campaign.
+# Univariate Analysis
+### What is the structure of your dataset?
+In this dataset there were 2319 contributions, made to 14 different candidates, by 1036 unique contributors. 436 contributors gave money more than once. The largest amount contributed in this dataset was $10800 and was given to Ben Carson. The biggest refund was for $5400 and refunded by Ted Cruz. The smallest value contributed was for $2, and the interquartile range of donations excluding refunds was between $50 and $397. Again, excluding refunds, the median contribution was $100 and the mean contribution was $376. The occuption of contributors seeemed to vary widely, as 322 unique values were listed.
+Republican Ben Carson recieved the largest number of contributions(594), followed by other Republican Ted Cruz(425), and then democratic candidate Hillary Clinton(414).Rick Perry came in last with only one contribution made to his campaign. Republican Jeb Bush had the highest Mean and Median contributions, 2034 and 2700 respectively. 
+
+There were 18 original features in the dataset.These were:
+
+[cmte_id,cand_id,cand_nm,contbr_nm,contbr_city,contbr_st,contbr_zip,contbr_employer,contbr_occupation,contb_receipt_amt,contrb_receibt_dt,receipt_desc,memo_cd,memo_text,form_tp,file_num,tran_id,form_tp,file_num,tran_id,election_tp]
+
+### What is/are the main feature(s) of interest in your dataset?
+The main features of interest in my dataset are cand_nm,contb_receipt_amt.Most of the things i am interested in investigating are related to the success of the candidate. The frequency and scale of contributions, i believe, plays a large role in this.
+
+### What other features in the dataset do you think will help support your investigation into your feature(s) of interest?
+Other features that might make sense to look at are contbr_nm, contbr_city, and contb_receipt_dt. It would be interesting to see if something like the 80-20 rule applies here, with 80% of contributions being given by 20% of contributors. I believe it would also be helpful to see the locations where different contributions were coming from, maybe to see if certain areas were more valuable in terms of campaigning. Finnally it would make sense to look at when different donations occured, to see if certain candidates have been trending up or down as their campaign has progressed.
+
+### Did you create any new variables from existing variables in the dataset?
+I created a variable called contb_receipt_amt.Bucket, from contb_receipt_amt using R's cut function. The purpose of this was to get around the fact that most donations were occuring in seemingly discreete increments. I also added another column called 'Day' with the date represented as numeric value(I subtracted the minimum date from all dates in the vector. I did this so that i would be easier to plot with this information later on.
+
+### Of the features you investigated, were there any unusual distributions? Did you perform any operations on the data to tidy, adjust, or change the form of the data? If so, why did you do this?
+
+When the data was first loaded.Ted Cruz had to cand_nm levels devoted to him, which was a mistake. To fix this i used tidyr's spread function, to make those variables columns, then i added values of the vector of the extra one to the values of the vector of the first one. I then gathered the updated columns and deleted the extra one.
+
+# Bivariate Plots Section
+I decided to visualize some of the summary table information
+The first question i wanted to answer was "Who recieved the most money?"
+```{r echo=FALSE, Bivariate_Plots}
+ggplot(aes(x=reorder(cand_nm,-TotalContributions),y=TotalContributions),data=Contributions.Summary.Can)+
+  geom_bar(stat ='identity')+
+  theme(axis.text.x=element_text(angle=20,size=8,vjust=0.9,hjust=.9),title=element_text(size=15))+
+  xlab('Candidates')+
+  ylab('Total Contributions')+
+  ggtitle('Total Contributions by Candidate')
+```
+
+It turns out that while Ben Carson was still in the lead for Republians, Hillary Clinton was actually the candidate who raised the most money so far.
+
+Let's see how candidates ranked up in terms of Mean Donations.
+```{r echo=FALSE}
+ggplot(aes(x=reorder(cand_nm,-MeanContributions),y=MeanContributions),data=Contributions.Summary.Can)+
+  geom_bar(stat ='identity')+
+  theme(axis.text.x=element_text(angle=20,size=8,vjust=0.9,hjust=.9),title=element_text(size=15))+
+  xlab('Candidates')+
+  ylab('Mean Contributions')+
+  ggtitle('Mean Contributions by Candidate')
+```
+
+Looks like a close contest between Jeb Bush, Mike Huckabee,Lindsey Graham, and Martin O Mall. That's really strange. O' Mally's been polling at close to 0 since the start of the race. I wonder what the plot would look like if we used Median Contributions instead.
+
+```{r echo=FALSE}
+ggplot(aes(x=reorder(cand_nm,-MedianContributions),y=MedianContributions),data=Contributions.Summary.Can)+
+  geom_bar(stat ='identity')+
+  theme(axis.text.x=element_text(angle=20,size=8,vjust=0.9,hjust=.9),title=element_text(size=15))+
+  xlab('Candidates')+
+  ylab('Median Contributions')+
+  ggtitle('Median Contributions by Candidate')
+```
+
+Looks like the same 4 Candidates as before, except now Jeb Bush is blowing everybody out of the water.Also interesting, is the Ben Carson, who led the pack in terms of the number of donations and maximum donations, is actually now closer to the tail of the plot. Let see how maximum donations played into the mix.
+
+```{r echo=FALSE}
+ggplot(aes(x=reorder(cand_nm,-MaxContributions),y=MaxContributions),data=Contributions.Summary.Can)+
+  geom_bar(stat ='identity')+
+  theme(axis.text.x=element_text(angle=20,size=8,vjust=0.9,hjust=.9),title=element_text(size=15))+
+  xlab('Candidates')+
+  ylab('Maximum Contributions')+
+  ggtitle('Maximum Contributions by Candidate')
+```
+Ok that's reallly intesting. Except for Mike Huckabee, the top 4 leaders in mean and median aren't the leaders in the largest donations. Ben Carson actually leads here, which is weird because he was ranked in the middle for Mean Donations, and large donations should have skewed that value upwards with him. Maybe it was just a fluke. In any case there was only one way to be sure. Time for a boxplot.  
+
+```{r echo=FALSE}
+ggplot(aes(x=reorder(cand_nm,-contb_receipt_amt),y=contb_receipt_amt),data=Contributions)+
+  geom_boxplot()+
+  scale_y_continuous(breaks=seq(-5000,12500,2500))+
+  theme(axis.text.x=element_text(angle = 20,size=8,vjust = .9,hjust =.9))+
+  xlab('Candidates')+
+  ylab('Contribution Amount')+
+  ggtitle('Contribution Analysis by Candidate')
+```
+So now this makes more sense. It looks like most of Jeb Bush's donations were above the $2500 mark, while ben carsons donations were all much smaller. Ben did get the largest donation,and he does have a few outliers, but it looks the like great majority of,his support has been from small donations. Martin O Mally, we can also now see that he hasn't had a lot of donations, and the one's he's had were mostly small scale. However, because the frequency of donation for him is so low, the larger donations he did get probably skewed his mean upwards just because that number is so variable.
+
+Here's something similar using geom_point
+```{r echo=FALSE}
+ggplot(aes(x=cand_nm,y=contb_receipt_amt),data= Contributions)+
+  geom_point(alpha=1/10)+
+  scale_y_continuous(breaks=seq(-5000,12500,2500))+
+  theme(axis.text.x=element_text(angle=20,size=8,vjust=0.9,hjust=.9),title=element_text(size=15))+
+  xlab('Candidates')+
+  ylab('Contribution Amount')+
+  ggtitle('Contribution Analysis by Candidate')
+```
+
+Let's quickly look where, in terms of location, this money is coming from.
+```{r echo=FALSE}
+Contributions.by_City<-Contributions %>% group_by(contbr_city)%>%
+  summarise(LocSum=sum(contb_receipt_amt)) %>%
+  arrange(-LocSum)
+
+ggplot(aes(x=reorder(contbr_city,-LocSum),y=LocSum),data=Contributions.by_City[1:15,])+
+  geom_bar(stat='identity')+
+  theme(axis.text.x=element_text(angle=20,size=8,vjust=0.9,hjust=.9),
+  title=element_text(size=15),
+  legend.position='none')+
+  xlab('City')+
+  ylab('Total Contributions')+
+  ggtitle('Total Contributions by City')
+```
+Looks like most of the money is coming from Charlotte and Raleigh.
+
+
+We talked about the 80-20 rule, lets make another plot to see if thats actually playing out here.
+
+```{r echo=FALSE}
+ggplot(aes(x=reorder(contbr_nm,-TotalContributions),y=TotalContributions),data=Contributions.Summary.Con[1:30,])+
+  geom_bar(stat='identity')+
+  scale_y_continuous(breaks=seq(0,30000,5000))+
+  theme(axis.text.x=element_text(angle=30,size=5,vjust=1,hjust=1),
+  title=element_text(size=15),
+  legend.position='none')+
+  geom_text(aes(label=FreqOfContributions),color = 'blue',size=4,vjust=-.2)+
+  xlab('Contributor')+
+  ylab('Total Contributions')+
+  ggtitle('Total Contributions by Contributor')
+```
+Wow, so whoever, Mr Harrison J Frank III is i'd like to meet him since i guess he had the disposable income to more than double the contribution of the next biggest contributor. In terms of the 80:20 rule, the top 20% of contributors(Top 207), made up around 67.4% of total contributions While the top 3% of contributors(30) made up just over 20% of total contributions So this is a BIG skew.
+
+Sum of Total Contributions
+```{r echo=FALSE}
+sum(Contributions.Summary.Con$TotalContributions)
+```
+
+Sum of Top 20%(207) Contributors
+```{r echo=FALSE}
+sum(Contributions.Summary.Con$TotalContributions[1:207])
+```
+Percentage of Total Contributions made up the top 20% of Contributors
+```{r echo=FALSE}
+sum(Contributions.Summary.Con$TotalContributions[1:207])/sum(Contributions.Summary.Con$TotalContributions)
+```
+
+Sum of Top 30 Contributors
+```{r echo=FALSE}
+sum(Contributions.Summary.Con$TotalContributions[1:30])
+```
+
+Percentage of Total Contributions made up the top 3%(30) of Contributors
+```{r echo=FALSE}
+sum(Contributions.Summary.Con$TotalContributions[1:30])/sum(Contributions.Summary.Con$TotalContributions)
+```
+
+The last thing i really wanted to look at in this section was to see how the frequency of contributions compared to Total Contributions
+```{r echo=FALSE}
+ggplot(aes(x=round(FreqOfContributions),y=TotalContributions),data=Contributions.Summary.Con)+
+  geom_point(alpha=1/10)+
+  scale_y_log10()+
+  scale_x_discrete(breaks=c(0,1,2,3,4,5,6,7,8,9,10))+
+  coord_cartesian(xlim = c(0,quantile(Contributions.Summary.Con$FreqOfContributions,.99)))+
+  xlab('Contribution Frequency')+
+  ylab('Contribution Amount')+
+  ggtitle('Contribution Amount by Frequency')
+```
+I could see that the highest concentration of donors were one offs, and that the range of their donations varied widely. I decided that rather attempt a subjective intpretation, it might make sense to just perform a linear regression.
+
+```{r echo=FALSE,Linear_Regression}
+newlog<- function(x) ifelse(x <= 0, 0, base::log(x))
+model<-lm(newlog(TotalContributions)~FreqOfContributions,data=Contributions.Summary.Con)
+summary(model)
+```
+The Coefficient for FreqOfContributions was very close to zero, and the p value was very high. This meant that we could not reject the null hypothesis that the coefficient on FrequencyOfContributions should actually be zero, which meant it didn't appear that there was a relationship between these two values.
+
+# Bivariate Analysis
+### Talk about some of the relationships you observed in this part of the investigation. How did the feature(s) of interest vary with other features in the dataset?
+The strongest relationships i saw were betweeen mean donation and median donation. Jeb was in the lead on both, despite not having the most donations, or the largest donations. It looks like at this point in the campaign season it may be too early for money to matter. Another alternative is that most of the contributions that matter are not listed in the Federal Election Commitee data, as it has instead gone to super pacs. I can say that after playing around with mean, median,max, frequency, and total sum of donations that the same 4 candidates kept popping up in different orders. These were Hillary Clinton, Ben Carson, Ted Cruz, and Jeb Bush. 3 of these four ranked highly in terms of the frequency of donations, Jeb Bush was the only one who didn't score highly there. This was probably mitigated by the average size of his donations, as they were on average much stronger than his peers. Perhaps the strongest argument that could be said is that are only around 4 or 5 credible candidates that are listed in the dataset, and that everybody below this threshold for the most part performs poorly.
+
+### Did you observe any interesting relationships between the other features (not the main feature(s) of interest)?
+I saw that the most money came out of Charlotte. I also saw that a dispraportionate amount of money came from a small number of super contributors. It blew my mind that 3% of donors made up 20% of total contributions.  
+
+### What was the strongest relationship you found?
+The relationship between median and mean donations. Jeb bush was solidly in the lead with both.
+
+
+# Multivariate Plots Section
+
+```{r echo=FALSE, Multivariate_Plots}
+ggplot(aes(x=Days,y=contb_receipt_amt),data=Contributions)+
+  geom_point(aes(color=cand_nm))+
+  xlab('Day')+
+  ylab('Contribution Amount')+
+  ggtitle('Contributions over time')+
+  theme(legend.text=element_text(size=5),
+        legend.position="right",
+        legend.title=element_blank(),
+        axis.text.x=element_text(angle=20, size=8, vjust=0.7))
+
+levels(Contributions$cand_nm)
+```
+I wanted look at how contributions rose or fell for candidates over time. Immediately ,however,i noticed a problem. There are 15 candidates. This is a large number for a legend, and is compounded by the fact that the colors are effectively uninterpretable. 
+
+To mitigate this issue i decided to ignore outlier candidates.
+```{r echo=FALSE}
+ContributionsNO<-Contributions[Contributions$names]
+levels(ContributionsNO$cand_nm)
+
+Exclude<-c('Santorum, Richard J.',"O'Malley, Martin Joseph","Perry, James R. (Rick)",'Jindal, Bobby','Graham, Lindsey O.','Fiorina, Carly','Huckabee, Mike')
+ContributionsNO <- subset(Contributions,!(cand_nm %in% Exclude))
+ContributionsNO <- droplevels(ContributionsNO)
+unique(ContributionsNO$cand_nm)
+```
+I was more or less subjective regarding which candidates to exclude, but i used for reference the bivariateplots shown above in terms of which candidates performed the poorest.
+```{r echo=FALSE}
+ggplot(aes(x=Days,y=contb_receipt_amt),data=ContributionsNO)+
+  geom_point(aes(color=cand_nm),alpha=.2)+
+  scale_x_continuous(breaks=seq(0,300,30))+
+  scale_y_continuous(limits=c(0,12500))+
+  xlab('Day')+
+  ylab('Contribution Amount')+
+  ggtitle('Contributions Over Time')+
+  theme(legend.text=element_text(size=15),
+        legend.position="right",
+        legend.title=element_blank(),
+        axis.text.x=element_text(angle=20, size=10, vjust=0.7))+
+  guides(colour = guide_legend(override.aes = list(alpha = 1)))
+
+```
+This was slightly better but there was still a lot of clutter. There were a large number of dots all very close to each other and in many cases they overlapped. Using alpha helped some with this issue, but it still wasn't ideal. 
+```{r echo=FALSE}
+ContributionsNO$Months<-floor(ContributionsNO$Days/30)
+
+head(ContributionsNO)
+summary(ContributionsNO$contb_receipt_amt)
+ggplot(aes(x=Months,y=contb_receipt_amt),data=ContributionsNO)+
+  geom_line(aes(color=cand_nm),stat='summary',fun.y='mean')+
+  scale_x_continuous(limits=c(0,10),breaks=seq(0,10,1))+
+  scale_y_log10()+
+  scale_colour_brewer(palette="Set1")+
+  xlab('Day')+
+  ylab('Contribution Amount')+
+  ggtitle('Mean Contributions Over Time')+
+  theme(legend.text=element_text(size=15),
+        legend.position="right",
+        legend.title=element_blank(),
+        axis.text.x=element_text(angle=20, size=10, vjust=0.7))+
+    guides(colour = guide_legend(override.aes = list(alpha = 1)))
+
+
+ggplot(aes(x=Months,y=contb_receipt_amt),data=ContributionsNO)+
+  geom_line(aes(color=cand_nm),stat='summary',fun.y='median')+
+  scale_x_continuous(limits=c(0,10),breaks=seq(0,10,1))+
+  scale_y_log10()+
+  scale_colour_brewer(palette="Set1")+
+  xlab('Day')+
+  ylab('Contribution Amount')+
+  ggtitle('Median Contributions Over Time')+
+  theme(legend.text=element_text(size=15),
+        legend.position="right",
+        legend.title=element_blank(),
+        axis.text.x=element_text(angle=20, size=10, vjust=0.7))+
+    guides(colour = guide_legend(override.aes = list(alpha = 1)))
+```
+So this was a much clearer picture. We can see that Rand Paul started off campaigning early, and suceeded in attracting a lot of large contributions, however, as time went on and more candidates entered the race, the Mean and Median amounts donated to him dropped of significantly and started to average out to the amounts donated to the other candidates. We can also see that Jeb bush started getting money a month or two, and again the amounts were significantly larger than the meanand and median amounts donated to the other candidates. 
+
+Next I wanted to take another look at Contributions by City. Specifically, i wanted to see the breakdown of donations by Candidat for these different locations.
+```{r echo=FALSE}
+Contributions.by_CityCand<-ContributionsNO %>% 
+  group_by(contbr_city,cand_nm)%>%
+  summarise(CandSum=sum(contb_receipt_amt)) %>%
+  mutate(LocSum=sum(CandSum))%>%
+  ungroup() %>%
+  arrange(-LocSum)
+options(scipen=999)
+
+ggplot(aes(x=reorder(contbr_city,-LocSum),y=CandSum,fill=cand_nm),data=Contributions.by_CityCand[1:75,])+
+  geom_bar(stat='identity',color="black")+
+  theme(axis.text.x=element_text(angle=30,size=8,vjust=0.9,hjust=.9),
+  title=element_text(size=15))+
+  scale_y_continuous(breaks=c(0,25000,50000,75000,100000,125000))+
+  xlab('City')+
+  ylab('Total Contribution Amt')+
+  ggtitle('Total Contributions by City by Cand')
+```
+Interesting. It seem that in the largest donation cities, the most money is going to Hillary Clinton and Ben Carson respectively, with Jeb Bush coming in third.
+
+# Multivariate Analysis
+
+### Talk about some of the relationships you observed in this part of the investigation. Were there features that strengthened each other in terms of looking at your feature(s) of interest?
+
+Jeb Bush again won hands down when we started to look at mean and median contributions over time. We also saw that part of the reason for this was because he almost always recieves mid level donations. Another interesting point was that the same three candidates that recieved the most Total Contributions come up in the same rankings when looking at contributions by location. Again it was Hillary Clinton in 1st place, Ben Carson in 2nd, and Jeb Bush in 3rd.
+
+I do not feel comfortable, based on this data, that i will be able to build an effective linear model for Campaign Donations. There are just too many outside variable to take into consideration (Median, Population, Debates). Other than Location of Contributors, i think that the issues driving the success in donations for these different candidates, are factors that aren't represented in this dataset.
+
+### Were there any interesting or surprising interactions between features?
+
+I was suprised that Jeb Bush Started receiving money so much later than the other candidates, and Rand Paul so early. It was also interesting to see that the mean donations for Rand Paul were initailly much higher before other candidates started receiving funds.There was a significant drop off following this occurence. Finally it was interesting to see how much Location plays a role in fundraising. It does not seem like it would be a coincidence that the same three candidates leading in Total Contributions, are the same three candidates leading in terms of amounts contributed by the big money giving cities(and in the same order as well!). 
+
+# Final Plots and Summary
+
+### Plot One
+```{r echo=FALSE, Plot_One}
+#Fix this so that you are adding up the months discretely.
+ContributionsNO<-ContributionsNO %>% group_by(cand_nm,Months)%>%
+  arrange(Days) %>%
+  mutate(MonthRaise=sum(contb_receipt_amt))%>%
+  ungroup()%>%
+  group_by(cand_nm)%>%
+  arrange(Days) %>%
+  mutate(TotalRaised=cumsum(contb_receipt_amt))
+
+ggplot(aes(x=Months,y=MonthRaise),data=ContributionsNO)+
+  geom_point(aes(color=cand_nm,cex=10),stat = 'summary',fun.y='median')+
+  scale_colour_brewer(palette="Set1")+
+  geom_line(aes(x=Months,y=TotalRaised,color = cand_nm))+
+  scale_x_continuous(limits=c(0,10),breaks=seq(0,10,1))+
+  scale_y_continuous(breaks=seq(0,200000,25000))+
+  xlab('Day')+
+  ylab('Contribution Amount')+
+  ggtitle('Monthly and Total Contributions over Time')+
+  theme(title=element_text(size=15),
+      legend.text=element_text(size=15),
+        legend.position="right",
+        legend.title=element_blank(),
+        axis.text.x=element_text(angle=20, size=10, vjust=0.7))+
+    guides(colour = guide_legend(override.aes = list(alpha = 1)))
+
+ggplot(aes(x=Months,y=contb_receipt_amt),data=ContributionsNO)+
+  geom_jitter(aes(color=cand_nm,size=15),stat='summary',fun.y='median')+
+  geom_line(aes(x=Months,y=TotalRaised,color = cand_nm))+
+  scale_x_continuous(limits=c(0,10),breaks=seq(0,10,1))+
+  scale_y_log10(breaks=c(10,25,100,300,1000,3000,10000,30000,75000,175000))+
+  scale_colour_brewer(palette="Set1")+
+  xlab('Day')+
+  ylab('Contribution Amount')+
+  ggtitle('Total Contributions Over Median Contributions')+
+  theme(title=element_text(size=15),
+        legend.text=element_text(size=15),
+        legend.position="right",
+        legend.title=element_blank(),
+        axis.text.x=element_text(angle=20, size=10, vjust=0.7))+
+    guides(colour = guide_legend(override.aes = list(alpha = 1)))
+```
+
+### Description One
+Jeb Bush started raising funds last, but was able to jump to third place in terms of total funds raised. Clinton has been in the lead since she started raising cash, and Paul Rand, despite getting contributions 6 months before anybody else, has fallen to the middle of the pack. Additionally we can see that his mean contribution size has fallen steadily ever since the other candidates started getting money.This could be due to getting a large number of smaller donations now that it's getting later into the race.
+
+### Plot Two
+```{r echo=FALSE, Plot_Two}
+theme_set(theme_minimal(12))
+
+p1<-  ggplot(aes(x=contb_receipt_amt),data=ContributionsNO)+
+  geom_density(aes(color=cand_nm))+
+  scale_x_log10(breaks=c(5,10,25,100,500,2500,10000))+
+  xlab('Contribution Amt') +
+  ylab('Density') +
+  ggtitle('Contribution Amt By Density')+
+    theme(title=element_text(size=15),
+        legend.text=element_text(size=10),
+        legend.position="right",
+        legend.title=element_blank(),
+        axis.text.x=element_text(angle=10, size=10, vjust=0.7),
+        axis.title=element_text(size=15))
+
+ContributionsNO<-ContributionsNO %>% group_by(cand_nm)%>%
+  mutate(FreqContr=n())
+ 
+p2<-ggplot(aes(x=reorder(cand_nm,-FreqContr),y=FreqContr),data=ContributionsNO)+
+  geom_bar(stat='summary',fun.y=mean)+
+  xlab('Candidate')+
+  ylab('Number of Contributions')+
+  ggtitle('Number of Contributions by Candidate')+
+  theme(title=element_text(size=15),
+        legend.text=element_text(size=10),
+        legend.position="right",
+        legend.title=element_blank(),
+        axis.text.x=element_text(angle=10, size=10, vjust=0.7),
+        axis.title=element_text(size=15))
+
+grid.arrange(p2,p1)
+```
+
+### Description Two
+Again we can see that while Jeb Bush is the weakest of the 'frontrunners' in terms of the number of his donations, the contributions he does have are quite large. This differentiates him from the remaining candidates as the distribution of their contributions are centered further to the left, and more or less follow the same patterns.
+
+### Plot Three
+```{r echo=FALSE, Plot_Three}
+#histogram by candidate
+ggplot(aes(x=contb_receipt_amt.Bucket,fill=cand_nm),data=ContributionsNO)+
+         geom_histogram(color="black")+
+  xlab('Contribution Amount')+
+  ylab('Frequency')+
+  ggtitle('Contribution Frequency by Candidate')+
+  theme(legend.text=element_text(size=15),
+        legend.position="right",
+        legend.title=element_blank(),
+        axis.text.x=element_text(angle=40, size=10, vjust=0.7))
+```
+
+# Description Three
+Ben carson has the most normalized distribution of Contributions made out to him using log10 and buckets on the x axis. Jeb Bush's distribution is centered further to the right at the $500-$1000 range, with a number of larger and smaller donations above and below this. The total frequency of his contributions seems to be lower. Bernie sanders seeems to actually mimic ben Carson a lot in terms of the frequency and scale of his distributions, however, it's easy to see why hillary has been so successful fund raising, as she is represented strongly across all of the buckets.
+
+
+# Reflection
+The Contributions data set contains information on 14 presidential candidates and all of their registered contributors in the State of North Carolina. I started by understanding the individual variables, and how their levels were structured. Then i processed the dataset to fix an issue with duplicated values. After analyzing the spread of values i realized that it made the most sense to analze contributions in 'buckets' with different min and maximum thresholds. I also saw that different candidates had different patterns in terms of their contributions. Jeb Bush stood out as the biggest outlier in this regard,given that, despite recieveiving contributinos the latest, and recieving the fewest number of contributions out of all the frontrunner candidates, the mean and median contributions he did receive were far larger than those of his peers. Hillary Clinton was the strongest candidate in terms of total contributions, though Ben Carson, a political outsider in many way performed strongly. I was unable to create a linear model to predict the Total Contributions for each candidate, as the data was too variable and unrepresentive of many key drivers in campaigning. Maybe as things get later into the campaign it would make more sense, but as right now i think it is too early. One thing that would make this task easier is to have access to the list of Major Super Pacs working on behalf of these different candidates. I know from experience that the amounts represented in the Federal Election Commitee datasets, are just a small fraction of the total amounts contributed to the candidates during political campaigns.
