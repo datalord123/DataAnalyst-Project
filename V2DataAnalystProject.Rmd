@@ -1,18 +1,23 @@
-
-Analysis of 2016 NC Presidential Campaign Contributions by Matthew Bellissimo
 ---
-output: html_document
-references: http://www.realclearpolitics.com/epolls/2016/president/us/2016_republican_presidential_nomination-3823.html,http://www.realclearpolitics.com/epolls/2016/president/us/2016_democratic_presidential_nomination-3824.html
-
+title: "Analysis of 2016 NC Presidential Campaign Contributions by Matthew Bellissimo"
+output:
+  html_document:
+    theme: readable
 ---
-
+```
+References: http://www.realclearpolitics.com/epolls/2016/president/us/2016_republican_#presidential_nomination-3823.html,http://www.realclearpolitics.com/epolls/2016/preside#nt/us/2016_democratic_presidential_nomination-3824.html
+```
 ```{r echo=FALSE, message=FALSE, warning=FALSE,packages}
+#Could also add fig.align = 'center' to R block header
 #Load the Packages
 library(ggplot2)
 library(gridExtra)
 library(dplyr)
 library(tidyr)
 library(reshape2)
+knitr::opts_chunk$set(fig.align = 'center')
+
+
 
 theme_set(theme_minimal(20))
 ```
@@ -562,7 +567,7 @@ the frequency of contributions compared to Total Contributions
 #Contribtion amount by Frequency
 ggplot(aes(x=round(FreqOfContributions),y=TotalContributions),
        data=Contributions.Summary.Con)+
-  geom_point(alpha=1/10)+
+  geom_jitter(alpha=1/10)+
   scale_y_log10()+
   scale_x_discrete(breaks=c(0,1,2,3,4,5,6,7,8,9,10))+
   coord_cartesian(xlim = c(0,quantile(Contributions.Summary.Con$FreqOfContributions,.99)))+
@@ -678,6 +683,7 @@ points.
 
 ```{r echo=FALSE, message=FALSE, warning=FALSE}
 #Change Y Axis to log10 and add alpha of .5
+ContributionsNO$Months<-floor(ContributionsNO$Days/30)
 ContributionsNO<-ContributionsNO %>% group_by(cand_nm)%>%
   arrange(Days) %>%
   mutate(TotalRaised=cumsum(contb_receipt_amt))%>%
@@ -766,6 +772,7 @@ ggplot(data = melted_cormat,aes(x=Var1,y=Var2,fill=value)) +
         legend.justification = c(1,0))+
   coord_fixed()
 ```
+
 In the plot above, we can see that all the candidates are very strongly
 correlted with each other. Even the 'less correlated' candidate pairs
 [Ted Cruz,Rand Paul] and [Jeb Bush,Rand Paul] still have a positive correlation
@@ -774,8 +781,6 @@ of over .6 percent, which is High.
 Now I wanted to look and Mean an Median Contributions per Month.
 ```{r echo=FALSE, message=FALSE, warning=FALSE}
 #Create new variable,Month out of Days column
-ContributionsNO$Months<-floor(ContributionsNO$Days/30)
-
 #Show Mean Contribution per Month 
 ggplot(aes(x=Months,y=contb_receipt_amt),data=ContributionsNO)+
   geom_line(aes(color=cand_nm),stat='summary',fun.y='mean')+
@@ -809,7 +814,7 @@ ggplot(aes(x=Months,y=contb_receipt_amt),data=ContributionsNO)+
 Again we can see Jeb Bush in the lead for Mean and Median. It's also
 interesting to see that the average size of the contribution amounts for Rand
 Paul, dropped significantly almost immediately after Ted Cruz entered the race.
-```{r echo=FALSE, message=FALSE, warning=FALSE}
+```{r echo=FALSE, message=FALSE, warning=FALSE, fig.width = 20}
 Contributions.by_CityCand<-ContributionsNO %>% 
   group_by(contbr_city,cand_nm)%>%
   summarise(CandSum=sum(contb_receipt_amt)) %>%
@@ -828,7 +833,6 @@ ggplot(aes(x=reorder(contbr_city,-LocSum),y=CandSum,fill=cand_nm),
   xlab('City')+
   ylab('Total Contribution Amt')+
   ggtitle('Total Contributions by City by Cand')
-
 ```
 
 Interesting. It seem that in the largest donation cities, 
@@ -872,7 +876,7 @@ candidates leading in Total Contributions, are the same three candidates
 leading in terms of amounts contributed by the big money
 giving cities(and in the same order as well!). 
 
-# Final Plots and Summary
+#Final Plots and Summary
 
 ### Plot One
 ```{r echo=FALSE, message=FALSE, warning=FALSE, Plot_One}
@@ -911,7 +915,7 @@ Contributions, and his Median Contributions.
 ```{r echo=FALSE, message=FALSE, warning=FALSE, Plot_Two}
 theme_set(theme_minimal(12))
 #First plot element of grid. Density plot.
-p1<-  ggplot(aes(x=contb_receipt_amt),data=ContributionsNO)+
+ggplot(aes(x=contb_receipt_amt),data=ContributionsNO)+
   geom_density(aes(color=cand_nm))+
   scale_x_log10(breaks=c(5,10,25,100,500,2500,10000))+
   xlab('Contribution Amt [$]') +
@@ -923,37 +927,19 @@ p1<-  ggplot(aes(x=contb_receipt_amt),data=ContributionsNO)+
         legend.title=element_blank(),
         axis.text.x=element_text(angle=10, size=10, vjust=0.7),
         axis.title=element_text(size=10))
-#Show contribution frequency
-ContributionsNO<-ContributionsNO %>% group_by(cand_nm)%>%
-  mutate(FreqContr=n())
-
-#First plot element of grid. Histogram.
-p2<-ggplot(aes(x=reorder(cand_nm,-FreqContr),y=FreqContr),data=ContributionsNO)+
-  geom_bar(stat='summary',fun.y=mean)+
-  xlab('Candidate')+
-  ylab('Number of Contributions')+
-  ggtitle('Number of Contributions by Candidate')+
-    theme(title=element_text(size=15),
-        legend.text=element_text(size=10),
-        legend.position="right",
-        legend.title=element_blank(),
-        axis.text.x=element_text(angle=10, size=10, vjust=0.7),
-        axis.title=element_text(size=10))
-
-grid.arrange(p2,p1)
 ```
 
 ### Description Two
-The plot on the top is a histogram that shows the total number of contributions
-received by each candidate. The plot below it is a density plot that effectively
-showsthe distribution of contributions for each candidate.
+The plot above is a density plot that bassically shows the distribution of
+contributions for eachCandidate(excluding the outliers we removed earlier) .
 
-So for instance, we can see that while 
-Jeb Bush is the weakest of the 'frontrunners'in terms of the number of 
-his donations, the contributions he does have are quite large. 
-This differentiates him from the remaining candidates as the 
-distribution of their contributions are centered further to the left, and are
-spread more evenly(less of a spike) across both low and high values.
+So for instance, we can see Jeb Bush's contributions are completely
+differentiated from the other candidates in that they are centered the furthest
+to the left(around 2500), and are highly focused around that range. So if we 
+remember from before that Jeb Bush doesn't score high in terms of the number
+of contributions he's received. The size of those donations are quite large,
+and in general his fund raising follows a completley differnet pattern than
+those of his peers.
 
 Note: Because the density plot
 in this instance is on the log-transformed data, the density values are
@@ -962,10 +948,10 @@ shows the contribution values re-transformed to their original values, but
 we actually use the transformed values in our calculations.
 
 ### Plot Three
-```{r echo=FALSE, message=FALSE, warning=FALSE, Plot_Three}
-#Histogram of Contribution bucket frequency by candidate
-ggplot(aes(x=contb_receipt_amt.Bucket,fill=cand_nm),data=ContributionsNO)+
-         geom_histogram(color="black",position = 'dodge')+
+``````{r echo=FALSE, message=FALSE, warning=FALSE, fig.width = 20,fig.height =10, Plot_Three}
+#   Histogram of Contribution bucket frequency by candidate
+ggplot(aes(x=contb_receipt_amt.Bucket),data=ContributionsNO)+
+         geom_histogram()+
   xlab('Contribution Amount[$]')+
   ylab('Frequency')+
   ggtitle('Contribution Frequency by Candidate')+
@@ -973,22 +959,23 @@ ggplot(aes(x=contb_receipt_amt.Bucket,fill=cand_nm),data=ContributionsNO)+
         legend.position="right",
         legend.title=element_blank(),
         axis.text.x=element_text(angle=40, size=10, vjust=0.7),
-        plot.title=element_text(size=20))
+        plot.title=element_text(size=20))+
+  facet_wrap(~cand_nm, ncol=1)
 ```
+
 # Description Three
-The plot above is a histogram that show the total of contributions made for 
-each candidate broken down by bucket. The 'buckets' in this instance, are
+The plot is a histogram faceted by candidate. With contribution amounts broken 
+down by bucket on the x-axis. The 'buckets' in this instance, are
 the same ones we defined earlier in the Analysis, and are being used
 for the same reasons.
 
-Ben carson has the most normalized distribution of Contributions made out to
-him using log10 and buckets on the x axis. Jeb Bush's distribution is centered
-further to the right at the $500-$1000 range, with a number of larger and smaller donations above and below this. The total frequency of his contributions seems
-to be lower. Bernie sanders seeems to actually mimic ben Carson a lot in terms
-of the frequency and scale of his distributions, however, it's easy to see why
-Hillary has been so successful fund raising, as she is represented strongly
-across all of the buckets.
-
+We can see that Ben carson has the most normalized distribution of Contributions
+made out to him using log10 and buckets on the x axis. Jeb Bush's distribution 
+is centered further to the right at the $500-$1000 range, with a number of
+larger and smaller donations above and below this. The total frequency of his contributions seems to be lower. Bernie sanders seeems to actually mimic
+ben Carson a lot in terms of the frequency and scale of his distributions, 
+however, it's easy to see why Hillary has been so successful fund raising,
+as she is represented strongly across all of the buckets.
 
 # Reflection
 The Contributions data set contains information on 14 presidential candidates
